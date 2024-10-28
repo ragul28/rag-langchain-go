@@ -15,6 +15,7 @@ dist/
 vault_data/
 svault/
 .vscode/
+.env
 
 # Unignore files
 !Dockerfile
