@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"log"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/tmc/langchaingo/embeddings"
 	"github.com/tmc/langchaingo/llms/googleai"
+	"github.com/tmc/langchaingo/vectorstores/weaviate"
 )
 
 const generativeModelName = "gemini-1.5-flash"
@@ -29,5 +31,12 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Println(emb)
+
+	wvStore, err := weaviate.New(
+		weaviate.WithEmbedder(emb),
+		weaviate.WithScheme("http"),
+		weaviate.WithHost("localhost:"+cmp.Or(os.Getenv("WVPORT"), "9035")),
+		weaviate.WithIndexName("Document"),
+	)
+	fmt.Println(wvStore)
 }
