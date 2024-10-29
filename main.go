@@ -10,6 +10,7 @@ import (
 
 	"github.com/tmc/langchaingo/embeddings"
 	"github.com/tmc/langchaingo/llms/googleai"
+	"github.com/tmc/langchaingo/schema"
 	"github.com/tmc/langchaingo/vectorstores/weaviate"
 )
 
@@ -48,6 +49,7 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /healthz/", server.HealthEndpoint)
+	mux.HandleFunc("POST /add/", server.addDocumentsHandler)
 
 	port := cmp.Or(os.Getenv("SERVERPORT"), "9020")
 	address := "localhost:" + port
@@ -65,4 +67,32 @@ type ragServer struct {
 func (h *ragServer) HealthEndpoint(w http.ResponseWriter, req *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("Service Healthy"))
+}
+
+func (rs *ragServer) addDocumentsHandler(w http.ResponseWriter, req *http.Request) {
+	// Parse HTTP request from JSON.
+	type document struct {
+		Text string
+	}
+	type addRequest struct {
+		Documents []document
+	}
+	ar := &addRequest{}
+
+	err := readRequestJSON(req, ar)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Store documents and their embeddings in weaviate
+	var wvDocs []schema.Document
+	for _, doc := range ar.Documents {
+		wvDocs = append(wvDocs, schema.Document{PageContent: doc.Text})
+	}
+	_, err = rs.wvStore.AddDocuments(rs.ctx, wvDocs)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 }
