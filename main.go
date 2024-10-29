@@ -7,8 +7,10 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/tmc/langchaingo/embeddings"
+	"github.com/tmc/langchaingo/llms"
 	"github.com/tmc/langchaingo/llms/googleai"
 	"github.com/tmc/langchaingo/schema"
 	"github.com/tmc/langchaingo/vectorstores/weaviate"
@@ -50,6 +52,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /healthz/", server.HealthEndpoint)
 	mux.HandleFunc("POST /add/", server.addDocumentsHandler)
+	mux.HandleFunc("POST /query/", server.queryHandler)
 
 	port := cmp.Or(os.Getenv("SERVERPORT"), "9020")
 	address := "localhost:" + port
@@ -96,3 +99,60 @@ func (rs *ragServer) addDocumentsHandler(w http.ResponseWriter, req *http.Reques
 		return
 	}
 }
+
+func (rs *ragServer) queryHandler(w http.ResponseWriter, req *http.Request) {
+	// Parse HTTP request from JSON.
+	type queryRequest struct {
+		Content string
+	}
+	qr := &queryRequest{}
+	err := readRequestJSON(req, qr)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Find the most similar documents.
+	docs, err := rs.wvStore.SimilaritySearch(rs.ctx, qr.Content, 3)
+	if err != nil {
+		http.Error(w, fmt.Errorf("similarity search: %w", err).Error(), http.StatusInternalServerError)
+		return
+	}
+	var docsContents []string
+	for _, doc := range docs {
+		docsContents = append(docsContents, doc.PageContent)
+	}
+
+	// Create a RAG query for the LLM with the most relevant documents as
+	// context.
+	ragQuery := fmt.Sprintf(ragTemplateStr, qr.Content, strings.Join(docsContents, "\n"))
+	respText, err := llms.GenerateFromSinglePrompt(rs.ctx, rs.geminiClient, ragQuery, llms.WithModel(generativeModelName))
+	if err != nil {
+		log.Printf("calling generative model: %v", err.Error())
+		http.Error(w, "generative model error", http.StatusInternalServerError)
+		return
+	}
+
+	renderJSON(w, respText)
+}
+
+const ragTemplateStr = `
+I will ask you a question and will provide some additional context information.
+Assume this context information is factual and correct, as part of internal
+documentation.
+If the question relates to the context, answer it using the context.
+If the question does not relate to the context, answer it as normal.
+
+For example, let's say the context has nothing in it about tropical flowers;
+then if I ask you about tropical flowers, just answer what you know about them
+without referring to the context.
+
+For example, if the context does mention minerology and I ask you about that,
+provide information from the context along with general knowledge.
+
+Question:
+%s
+
+Context:
+%s
+`
