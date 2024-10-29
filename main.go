@@ -54,7 +54,7 @@ func main() {
 	mux.HandleFunc("POST /add/", server.addDocumentsHandler)
 	mux.HandleFunc("POST /query/", server.queryHandler)
 
-	port := cmp.Or(os.Getenv("SERVERPORT"), "9020")
+	port := cmp.Or(os.Getenv("SERVERPORT"), "8000")
 	address := "localhost:" + port
 	log.Println("listening on", address)
 	log.Fatal(http.ListenAndServe(address, mux))
