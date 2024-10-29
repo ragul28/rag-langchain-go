@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 
 	"github.com/tmc/langchaingo/embeddings"
@@ -38,5 +39,30 @@ func main() {
 		weaviate.WithHost("localhost:"+cmp.Or(os.Getenv("WVPORT"), "9035")),
 		weaviate.WithIndexName("Document"),
 	)
-	fmt.Println(wvStore)
+
+	server := &ragServer{
+		ctx:          ctx,
+		wvStore:      wvStore,
+		geminiClient: geminiClient,
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /healthz/", server.HealthEndpoint)
+
+	port := cmp.Or(os.Getenv("SERVERPORT"), "9020")
+	address := "localhost:" + port
+	log.Println("listening on", address)
+	log.Fatal(http.ListenAndServe(address, mux))
+}
+
+type ragServer struct {
+	ctx          context.Context
+	wvStore      weaviate.Store
+	geminiClient *googleai.GoogleAI
+}
+
+// HealthEndpoint
+func (h *ragServer) HealthEndpoint(w http.ResponseWriter, req *http.Request) {
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("Service Healthy"))
 }
